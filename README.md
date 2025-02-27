@@ -2,6 +2,8 @@
 
 A desktop utility for efficiently copying and formatting file contents to the clipboard, designed for developers who interact with LLMs and want a faster way to move the content of files to chats.
 
+![Screenshot](file_copier_screenshot.png)
+
 ## Features
 
 - **Efficient File Management**:
