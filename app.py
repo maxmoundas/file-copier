@@ -30,7 +30,7 @@ class FileCopyApp:
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
         browse_file_btn = ttk.Button(
-            path_frame, text="Browse File", command=self.browse_file
+            path_frame, text="Browse File(s)", command=self.browse_file
         )
         browse_file_btn.pack(side=tk.LEFT, padx=2)
 
@@ -120,14 +120,22 @@ class FileCopyApp:
         )
         status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=5, pady=2)
 
+        # Store multiple file paths
+        self.file_paths = []
+
     def browse_file(self):
-        file_path = filedialog.askopenfilename(title="Select a file")
-        if file_path:
-            self.path_var.set(file_path)
+        file_paths = filedialog.askopenfilenames(title="Select file(s)")
+        if file_paths:
+            self.file_paths = file_paths
+            if len(file_paths) == 1:
+                self.path_var.set(file_paths[0])
+            else:
+                self.path_var.set(f"Selected {len(file_paths)} files")
 
     def browse_directory(self):
         dir_path = filedialog.askdirectory(title="Select a directory")
         if dir_path:
+            self.file_paths = []  # Clear any selected files
             self.path_var.set(dir_path)
 
     def read_file(self, file_path):
@@ -217,18 +225,48 @@ class FileCopyApp:
 
         return results, errors
 
+    def process_files(self, file_paths):
+        """Process multiple files and return their contents."""
+        results = []
+        errors = []
+
+        for file_path in file_paths:
+            if not self.should_ignore_file(file_path):
+                try:
+                    content = self.read_file(file_path)
+                    results.append((file_path, content))
+                except Exception as e:
+                    errors.append((file_path, str(e)))
+
+        return results, errors
+
     def process_path(self):
         path = self.path_var.get().strip()
 
-        if not path:
+        if not path and not self.file_paths:
             messagebox.showerror(
                 "Error", "Please enter or select a file/directory path"
             )
             return
 
-        if not os.path.exists(path):
-            messagebox.showerror("Error", "Path does not exist")
-            return
+        # Check if we have multiple files selected
+        if self.file_paths and len(self.file_paths) > 1:
+            # Process multiple files
+            file_paths = self.file_paths
+        else:
+            # Single file or directory path
+            if path.startswith("Selected ") and " files" in path:
+                # We have multiple files but need to use the stored paths
+                file_paths = self.file_paths
+            else:
+                # Regular single path processing
+                if not os.path.exists(path):
+                    messagebox.showerror("Error", "Path does not exist")
+                    return
+                if os.path.isdir(path):
+                    file_paths = []  # Will be handled by process_directory
+                else:
+                    file_paths = [path]
 
         prefix_delimiter = self.prefix_delimiter_var.get()
         suffix_delimiter = self.suffix_delimiter_var.get()
@@ -237,55 +275,50 @@ class FileCopyApp:
         self.preview_text.delete(1.0, tk.END)
 
         try:
-            if os.path.isdir(path):
+            if file_paths and not os.path.isdir(path):
+                # Process multiple files
+                results, errors = self.process_files(file_paths)
+            elif os.path.isdir(path):
+                # Process directory
                 results, errors = self.process_directory(path)
-
-                if results:
-                    all_content = ""
-                    for file_path, content in results:
-                        if show_file_paths:
-                            all_content += f"{file_path}\n\n"
-                        all_content += f"{prefix_delimiter}\n"
-                        all_content += content + "\n"
-                        all_content += f"{suffix_delimiter}\n\n"
-
-                    pyperclip.copy(all_content)
-                    self.preview_text.insert(tk.END, all_content)
-                    self.status_var.set(f"Copied {len(results)} files to clipboard!")
-
-                    if errors:
-                        error_msg = "Some files could not be processed:\n"
-                        for file_path, error in errors:
-                            error_msg += f"\n{file_path}: {error}"
-                        messagebox.showwarning("Warnings", error_msg)
-                else:
-                    if errors:
-                        error_msg = "No files were processed. Errors:\n"
-                        for file_path, error in errors:
-                            error_msg += f"\n{file_path}: {error}"
-                        messagebox.showerror("Error", error_msg)
-                    else:
-                        messagebox.showinfo("Info", "No files found to process")
             else:
-                content = self.read_file(path)
-                if show_file_paths:
-                    formatted_content = (
-                        f"{path}\n\n{prefix_delimiter}\n{content}\n{suffix_delimiter}"
-                    )
-                else:
-                    formatted_content = (
-                        f"{prefix_delimiter}\n{content}\n{suffix_delimiter}"
-                    )
+                # Should never reach here
+                messagebox.showerror("Error", "Invalid path configuration")
+                return
 
-                pyperclip.copy(formatted_content)
-                self.preview_text.insert(tk.END, formatted_content)
-                self.status_var.set(f"Copied content to clipboard!")
+            if results:
+                all_content = ""
+                for file_path, content in results:
+                    if show_file_paths:
+                        all_content += f"{file_path}\n\n"
+                    all_content += f"{prefix_delimiter}\n"
+                    all_content += content + "\n"
+                    all_content += f"{suffix_delimiter}\n\n"
+
+                pyperclip.copy(all_content)
+                self.preview_text.insert(tk.END, all_content)
+                self.status_var.set(f"Copied {len(results)} files to clipboard!")
+
+                if errors:
+                    error_msg = "Some files could not be processed:\n"
+                    for file_path, error in errors:
+                        error_msg += f"\n{file_path}: {error}"
+                    messagebox.showwarning("Warnings", error_msg)
+            else:
+                if errors:
+                    error_msg = "No files were processed. Errors:\n"
+                    for file_path, error in errors:
+                        error_msg += f"\n{file_path}: {error}"
+                    messagebox.showerror("Error", error_msg)
+                else:
+                    messagebox.showinfo("Info", "No files found to process")
 
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
     def clear_all(self):
         self.path_var.set("")
+        self.file_paths = []
         self.preview_text.delete(1.0, tk.END)
         self.status_var.set("")
 
